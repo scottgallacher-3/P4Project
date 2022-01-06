@@ -205,7 +205,7 @@ class ZygoMap:
         #so will have: self.heights0 - the original data, self.heights1 - flattened version, self.heights - flattened and cropped to centre on valid area
 #         self.heights1 = self.heights0.copy()
         if flatten:
-            self.heights1 = self.untilt(self.heights1)
+            self.untilt(self.heights1)
             self.validrows, self.validcols = np.where(np.isfinite(self.heights1))  # - update the valid points for flattened map
             
             
@@ -338,14 +338,14 @@ class ZygoMap:
         self.heights = cropped.copy()
         
         if reflatten:
-            self.heights = self.untilt(self.heights)
+            self.untilt(self.heights)
         
         #update valid positions, after rows/columns removed
         self.validrows, self.validcols = np.where(np.isfinite(self.heights))
         self.centre = int(np.nanmean(self.validcols)),int(np.nanmean(self.validrows))
         
         
-        return cropped
+        return self
     
     def untilt(self, array=None):
         #"array" argument left so normal or cropped maps can be used (i.e. self.heights vs self.cropped)
@@ -388,7 +388,7 @@ class ZygoMap:
         #update the stored heights array
         self.heights = new_array.copy()
         
-        return new_array
+        return self
     
     def plot(self, plot_type="2d"):
 
