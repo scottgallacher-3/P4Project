@@ -173,9 +173,6 @@ class ZygoMap:
         ########################
         ##pre-processing maps
         
-        #grid points for use in some methods (?) (just using array i,j position index (can scale later))
-        self.y, self.x = np.indices(self.heights.shape)
-        
         #apply cropping first (user-defined radius ? or default ?)
         #self.cropped = self.crop(self.heights)
         #orderings/logistics of this needs fixed: which array is edited? when? what effect should user cropping give?
@@ -183,18 +180,26 @@ class ZygoMap:
         #without data loss
         self.heights0 = self.heights.copy()
         self.heights1 = self.interpolate_grid()
+        
+        #grid points for use in some methods (?) (just using array i,j position index (can scale later))
+        self.y0, self.x0 = np.indices(self.heights0.shape)  # - original grid defined by x0,y0 (needed for self.crop)
+        self.y, self.x = np.indices(self.heights.shape)  # - variable grid to adapt to current condition of heights
+        
+        #adjust to centre of valid points (centre of surface)
+        self.validrows, self.validcols = np.where(np.isfinite(self.heights1))
+        self.centre = int(np.nanmean(self.validcols)), int(np.nanmean(self.validrows))
+        self.r0 = max(self.heights1.shape[0] // 2, self.heights1.shape[1] // 2)  # - maximum (initial) radius from given data
+        self.x0 -= self.centre[0]
+        self.y0 -= self.centre[1]
+        self.x -= self.centre[0]
+        self.y -= self.centre[1]
+        
 #         self.cropped = self.heights[:]  # - slice notation actually still links the variables, need np.copy() instead
         #store initial attributes just so they are not missing at any point
         #they will be inaccurate initially (e.g. based on tilted map), but get updated via untilt()
         self.peak, self.valley = np.nanmax(self.heights1), np.nanmin(self.heights1)
         self.peakvalley = self.peak - self.valley
         self.rms = np.sqrt(np.nanmean(self.heights1**2))
-        
-        #adjust to centre of valid points (centre of surface)
-        self.validrows, self.validcols = np.where(np.isfinite(self.heights1))
-        self.centre = int(np.nanmean(self.validrows)), int(np.nanmean(self.validcols))
-        self.x -= self.centre[1]
-        self.y -= self.centre[0]
         
                 
         #remove tilt if present
@@ -221,25 +226,52 @@ class ZygoMap:
     #three possible paths, depending if single file object; interface created of two maps; or simply a user-defined array
     def __str__(self):
         if self.filename is not None:
-            return ("ZygoMap object '{0}' for file: '{1}'."
-                    "\nPeak-to-valley height: {2:.1f} nm"
-                    "\nRMS height: {3:.1f} nm").format(self.mapname, self.filename, self.peakvalley*1e9, self.rms*1e9)
+            if self.is_cropped:
+                return ("ZygoMap object '{0}' for file: '{1}'."
+                        "\ncropped to radius: {2}"
+                        "\nPeak-to-valley height: {3:.1f} nm"
+                        "\nRMS height: {4:.1f} nm").format(self.mapname, self.filename, self.radius, self.peakvalley*1e9, self.rms*1e9)
+            else:
+                return ("ZygoMap object '{0}' for file: '{1}'."
+                        "\nPeak-to-valley height: {2:.1f} nm"
+                        "\nRMS height: {3:.1f} nm").format(self.mapname, self.filename, self.peakvalley*1e9, self.rms*1e9)
+        
         
         elif None not in (self.map1, self.map2, self.angle):
             if None not in (self.map1.mapname, self.map2.mapname):
-                return ("ZygoMap interface object '{0}' for '{1}' & '{2}' combined at angle {3:.0f} degrees."
-                        "\nPeak-to-valley height of bond: {4:.1f} nm"
-                        "\nRMS height of bond: {5:.1f} nm").format(self.mapname, self.map1.mapname, self.map2.mapname, self.angle,
-                                                                   self.peakvalley*1e9, self.rms*1e9)
+                if self.is_cropped:
+                    return ("ZygoMap interface object '{0}' for '{1}' & '{2}' combined at angle {3:.0f} degrees."
+                            "\ncropped to radius: {4}"
+                            "\nPeak-to-valley height of bond: {5:.1f} nm"
+                            "\nRMS height of bond: {6:.1f} nm").format(self.mapname, self.map1.mapname, self.map2.mapname, self.angle,
+                                                                       self.radius, self.peakvalley*1e9, self.rms*1e9)
+                else:
+                    return ("ZygoMap interface object '{0}' for '{1}' & '{2}' combined at angle {3:.0f} degrees."
+                            "\nPeak-to-valley height of bond: {4:.1f} nm"
+                            "\nRMS height of bond: {5:.1f} nm").format(self.mapname, self.map1.mapname, self.map2.mapname, self.angle,
+                                                                       self.peakvalley*1e9, self.rms*1e9)
+                
         elif self.mapname is not None:
-            return ("ZygoMap object for user-provided array '{0}'."
-                    "\nPeak-to-valley height: {1:.1f} nm"
-                    "\nRMS height: {2:.1f} nm").format(self.mapname, self.peakvalley*1e9,self.rms*1e9)
+            if self.is_cropped:
+                return ("ZygoMap object for user-provided array '{0}'."
+                        "\ncropped to radius: {1}"
+                        "\nPeak-to-valley height: {2:.1f} nm"
+                        "\nRMS height: {3:.1f} nm").format(self.mapname, self.radius, self.peakvalley*1e9,self.rms*1e9)
+            else:
+                return ("ZygoMap object for user-provided array '{0}'."
+                        "\nPeak-to-valley height: {1:.1f} nm"
+                        "\nRMS height: {2:.1f} nm").format(self.mapname, self.peakvalley*1e9,self.rms*1e9)
         
         else:
-            return ("ZygoMap object for user-provided array."
-                    "\nPeak-to-valley height: {0:.1f} nm"
-                    "\nRMS height: {1:.1f} nm").format(self.peakvalley*1e9,self.rms*1e9)
+            if self.is_cropped:
+                return ("ZygoMap object for user-provided array."
+                        "\ncropped to radius: {0}"
+                        "\nPeak-to-valley height: {1:.1f} nm"
+                        "\nRMS height: {2:.1f} nm").format(self.radius, self.peakvalley*1e9,self.rms*1e9)
+            else:
+                return ("ZygoMap object for user-provided array."
+                        "\nPeak-to-valley height: {0:.1f} nm"
+                        "\nRMS height: {1:.1f} nm").format(self.peakvalley*1e9,self.rms*1e9)
         
 #     @staticmethod
     def zygoread(self, filename):
@@ -314,18 +346,21 @@ class ZygoMap:
         #will run during __init__(), with default radius = 0, so can avoid editing if radius is default
         #and only do if user chose a (non-zero) radius
         #thus only the centring of view by array slicing is performed (no need for separate functions)
+        radius = abs(radius)
         
         #set cropped array based on original state of heights (so not cropping multiple times and losing data)
 #         cropped = self.heights0.copy()
         cropped = self.heights1.copy()
+        self.is_cropped = False
         
-        if radius != 0:
+        if radius != 0 and radius < self.r0:
             #if radius non-zero, we will be setting valid points to invalid (nan)
             #use centred x,y grid points for full data array to make a mask for points outside radius
             #then just change these points to nan (thus matching the pre-existing background)
-            outsideR = self.x**2 + self.y**2 > radius**2
+            outsideR = self.x0**2 + self.y0**2 > radius**2
             cropped[outsideR] = np.nan
             
+            self.is_cropped = True
             #could add a flag/callback here to automatically re-apply rotations after crops (otherwise advise user to do it)
             #e.g. if callback = True -> untilt()
         
@@ -343,7 +378,14 @@ class ZygoMap:
         #update valid positions, after rows/columns removed
         self.validrows, self.validcols = np.where(np.isfinite(self.heights))
         self.centre = int(np.nanmean(self.validcols)),int(np.nanmean(self.validrows))
+        self.y, self.x = np.indices(self.heights.shape)
+        self.x -= self.centre[0]
+        self.y -= self.centre[1]
         
+        if radius != 0 and radius < self.r0:
+            self.radius = radius
+        else:
+            self.radius = self.r0
         
         return self
     
@@ -429,7 +471,12 @@ class ZygoMap:
 
     #         ax.xaxis.set_major_locator(plt.NullLocator())  # - removes all (or specifically major ?) axis ticks/labels
             ax.tick_params(axis="both", length=1, pad=4)
-            plt.title("Surface Height Map for ZygoMap '{0}'".format(self.mapname), fontsize=10, pad=10)
+            
+            if self.is_cropped:
+                plt.title(("Surface Height Map for ZygoMap '{0}'"
+                           "\ncropped to radius: {1}").format(self.mapname, self.radius), fontsize=10, pad=10)
+            else:
+                plt.title(("Surface Height Map for ZygoMap '{0}'").format(self.mapname), fontsize=10, pad=10)
 
 
         elif plot_type == "3d":
@@ -471,7 +518,11 @@ class ZygoMap:
 
             ax.view_init(elev=10, azim=-55)
             
-            plt.title("3D Map of Surface Height Map for ZygoMap '{0}'".format(self.mapname), fontsize=10, pad=10)
+            if self.is_cropped:
+                plt.title(("3D Map of Surface Height Map for ZygoMap '{0}'"
+                           "\ncropped to radius: {1}").format(self.mapname, self.radius), fontsize=10, pad=10)
+            else:
+                plt.title(("3D Map of Surface Height Map for ZygoMap '{0}'").format(self.mapname), fontsize=10, pad=10)
 
 
         plt.show()
