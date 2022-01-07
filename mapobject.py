@@ -188,7 +188,7 @@ class ZygoMap:
         #adjust to centre of valid points (centre of surface)
         self.validrows, self.validcols = np.where(np.isfinite(self.heights1))
         self.centre = int(np.nanmean(self.validcols)), int(np.nanmean(self.validrows))
-        self.r0 = max(self.heights1.shape[0] // 2, self.heights1.shape[1] // 2)  # - maximum (initial) radius from given data
+        self.r0 = max(self.validcols.max() - self.centre[0], self.validrows.max() - self.centre[1])  # - maximum (initial) radius from given data
         self.x0 -= self.centre[0]
         self.y0 -= self.centre[1]
         self.x -= self.centre[0]
@@ -240,13 +240,13 @@ class ZygoMap:
         elif None not in (self.map1, self.map2, self.angle):
             if None not in (self.map1.mapname, self.map2.mapname):
                 if self.is_cropped:
-                    return ("ZygoMap interface object '{0}' for '{1}' & '{2}' combined at angle {3:.0f} degrees."
+                    return ("ZygoMap interface object '{0}' for '{1}' & '{2}' combined at angle {3:.2f} degrees."
                             "\ncropped to radius: {4}"
                             "\nPeak-to-valley height of bond: {5:.1f} nm"
                             "\nRMS height of bond: {6:.1f} nm").format(self.mapname, self.map1.mapname, self.map2.mapname, self.angle,
                                                                        self.radius, self.peakvalley*1e9, self.rms*1e9)
                 else:
-                    return ("ZygoMap interface object '{0}' for '{1}' & '{2}' combined at angle {3:.0f} degrees."
+                    return ("ZygoMap interface object '{0}' for '{1}' & '{2}' combined at angle {3:.2f} degrees."
                             "\nPeak-to-valley height of bond: {4:.1f} nm"
                             "\nRMS height of bond: {5:.1f} nm").format(self.mapname, self.map1.mapname, self.map2.mapname, self.angle,
                                                                        self.peakvalley*1e9, self.rms*1e9)
@@ -346,7 +346,8 @@ class ZygoMap:
         #will run during __init__(), with default radius = 0, so can avoid editing if radius is default
         #and only do if user chose a (non-zero) radius
         #thus only the centring of view by array slicing is performed (no need for separate functions)
-        radius = abs(radius)
+        if radius < 0:
+            radius = self.r0 - abs(radius)
         
         #set cropped array based on original state of heights (so not cropping multiple times and losing data)
 #         cropped = self.heights0.copy()
@@ -383,7 +384,7 @@ class ZygoMap:
         self.y -= self.centre[1]
         
         if radius != 0 and radius < self.r0:
-            self.radius = radius
+            self.radius = abs(radius)
         else:
             self.radius = self.r0
         
