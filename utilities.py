@@ -7,6 +7,29 @@ import numpy as np
 import scipy.ndimage
 
 def matchdims(map1,map2):
+    """
+    Match the dimensions of a pair of 2D numpy arrays.
+    
+    The two arrays will be trimmed by slicing extra rows/columns from the map with the larger dimension
+    in each axis. Trims are made as symmetrical as possible by slicing from both sides of the axis.
+    Where the trim amount is an odd number, the final trim is taken from the end of the axis.
+    
+    For inputs 'map1' of shape (M,N) and 'map2' of shape (K,L), the output arrays will share the same shape
+    from the following possibilities: (M,N), (M,L), (K,N), or (K,L).
+    
+    Parameters:
+    
+    'map1' : numpy array, shape == (M,N))
+    'map2' : numpy array, shape == (K,L))
+    
+    Returns:
+    
+    'm1' : numpy array, shape == m2.shape
+    'm2' : numpy array, shape == m1.shape
+    
+    """
+    
+    
     #given two arrays (not map objects), truncate them to their lowest shared dimensions to be able to sum them
     #note: should probably choose to add rows/columns rather than remove data
     m1,m2 = map1.copy(),map2.copy()
@@ -40,7 +63,37 @@ def matchdims(map1,map2):
     return m1,m2
 
 
-def ztestf(*args):  # - optimisation of rotation around z-axis of upper map w.r.t lower map
+def ztestf(*args):
+    """
+    Test/loss function for the `mapcompare.combinemaps` function to optimise z-axis/in-plane rotation
+    for a pair of `ZygoMap` objects.
+    
+    This test function is used with `scipy.optimize.brute` to minimise peak-to-valley height when 
+    combining `ZygoMap` objects to simulate a bond. The test function considers in-plane rotations
+    of one map with respect to the other - different locations of map values produce variable 
+    final values when summed to create the bond interface, so the rotation is optimised first.
+    
+    Parameters:
+    
+    *args : Variables passed positionally from `scipy.optmize.brute`
+        args[0] : list
+            - The current test value from the optimising function, stored in a list.
+            - args[0][0] gives the value, which is the current guess for the z-rotation angle.
+        args[1] : `ZygoMap` object
+            - Corresponds to the "lower" map in the combination.
+        args[2] : `ZygoMap` object
+            - Corresponds to the "upper" map in the combination.
+            - This map is the one to be rotated.
+            
+    Returns:
+    
+    'peakvalley' : float
+        - Final measurement of the simulated bond's peak-to-valley height.
+        - Returned to `scipy.optimize.brute` to act as the minimisation variable.
+    
+    """
+    
+    # - optimisation of rotation around z-axis of upper map w.r.t lower map
     angz = args[0][0]  # - optimize.minimize gives angz as [0.] (why?) so needs extracted from list as well as args tuple
     lowermap, uppermap = args[1],args[2]
 
