@@ -17,18 +17,119 @@ Processing Steps:
 """
 
 import numpy as np
-# from scipy.spatial.transform import Rotation as Rot  # - performing rotations of vectors
-# import scipy.optimize
-# import scipy.ndimage  # - performing rotation of array as image - i.e. around z-axis
-# import copy  # - copy a python object
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm  # - get unique colour maps
-# from itertools import combinations  # - get all N-length combinations from a list
-import scipy.interpolate  # - possible interpolation function to fit new x,y positions to original x,y of grid
+import scipy.interpolate  # - interpolation function to fit data to a grid
 import os  # - extracting e.g. filename without folders or extensions
 
 
 class ZygoMap:
+    """
+    `ZygoMap` class to represent `Zygo` surface measurements as a 2D array of height values.
+        
+    Specifically designed to work with `MetroPro` ASCII-formatted data files
+    containing surface measurements taken with `Zygo` interferometer technology.
+    Phase data is extracted and converted to an array of height values at each
+    point on a 2D grid. The surface profile is described through 2 key metrics,
+    the peak-to-valley height and the RMS height.
+    
+    Maps can also be constructed directly from a pre-existing array.
+    
+    `ZygoMap` is also designed to represent combinations of maps using the height gap
+    of the interface between them when they form a face-to-face bond. A separate
+    function, `combinemaps` will simulate a bond between two maps, and construct a
+    `ZygoMap` for the interface heights. These interface/bond maps can be operated in
+    the same way as individual maps, but have additional attributes that reflect their
+    creation.
+    
+    See __init__() constructor for details of map creation.
+    
+    
+    Parameters:
+        
+    'filename' : str, optional
+        - The local filepath of a `MetroPro` .txt data file of surface measurements.
+        - If this is not supplied, then 'array' must be given to construct the object.
+    'array' : numpy array, shape == (M,N), optional
+        - Pre-existing array of height values on a 2D grid, to be processed
+          and stored in 'heights'.
+        - If 'array' is not None, then this will be used to construct the object,
+          and 'filename' will be ignored whether it is given or not.
+
+    'mapname' : str, optional
+        - Name to be given as an identifier for the map object.
+        - If 'filename' given, set by default to take the stem of the file (without .txt extension).
+        - Otherwise, if 'map1' and 'map2' exist, set by default to join the individual
+          map names with a "+" between them.
+        - Otherwise, 'mapname' will be None. The user can supply their own names.
+    'map1' : `ZygoMap` object, optional
+        - Map object for a constituent map that has been used to construct the current one.
+        - This is the "lower" map in the bond.
+    'map2' : `ZygoMap` object, optional
+        - Map object for a constituent map that has been used to construct the current one.
+        - This is the "upper" map in the bond.
+    'angle' : float, optional
+        - The relative in-plane rotation angle which was applied to 'map2'
+          to minimise the simulated bond profile.
+    'flatten' : bool, optional
+        - Flag to toggle the automatic tilt-removal process. Default is True.
+        - If user is providing a pre-defined array, they may want to keep the data as-is,
+          then flattening/tilt-removal can be turned off with `flatten=False`.
+
+    Returns: None
+    
+    
+    Key Methods:
+    
+    '__init__()' - Constructor for the class. Listed parameters above are passed here.
+    
+    'interpolate_grid' - Interpolate height data to fill in missing data, and fit to a grid.
+    
+    'crop' - Exclude data points using a radial crop, then centre and frame the valid data.
+    
+    'untilt' - Remove tilts present in the data by subtracting the best-fit plane describing the tilt.
+    
+    'plot' - Display either a 2D or 3D representation of the data.
+    
+    
+    Key Attributes:
+    
+    'heights' : numpy array, shape == (M,N)
+        - Main array for the height data, which is updated when processing.
+    'peakvalley' : float
+        - Main measurement metric for the height data.
+        - Describes the overall height of the surface, measured from its
+          highest point (peak) to lowest point (valley).
+        - Individual 'peak' and 'valley' points are also available separately.
+    'rms' : float
+        - Secondary measurment metric for the height data.
+        - Describes variation of height values around the mean, measured as the
+          root-mean-square of all values in the array.
+        
+        
+    Other/Utility Attributes:
+    
+    'heights0' : numpy array, shape == (K,L)
+        - 'heights' is mutable, so a copy of initial data is kept as read-in.
+    'heights1' : numpy array, shape == (K,L)
+        - A copy of inital interpolated data is kept, before cropping or tilt
+          removal is applied.
+    'map1' : `ZygoMap` object
+        - If the object is created as a bond interface, this represents the
+          "lower" of the two maps making the bond.
+    'map2' : `ZygoMap` object
+        - If the object is created as a bond interface, this represents the
+          "upper" of the two maps making the bond.
+    'maps' : tuple of `ZygoMaps`
+        - Access both 'map1' and 'map2' at once.
+    'is_cropped' : bool
+        - Flag to indicate whether the current data has been cropped.
+    'r0' : float
+        - Original radius of the uncropped data.
+    'radius' : float
+        - Current radius of data, cropped or uncropped.
+        
+    """
+    
     #structure: definition of methods for the class (to perform operations on the ZygoMap object - referred to as "self"):
     # - "zygoread(self, filename)" - extracting header fields and measurement data from MetroPro .txt files
     # ------------------------------ note that the data is not parsed into variables yet, just returned in more useful format
@@ -45,6 +146,67 @@ class ZygoMap:
     # -- any options given during e.g. "ZygoMap(option1=..., option2=...,)" get passed straight to __init__()
     
     def __init__(self, filename=None, array=None, mapname=None, map1=None, map2=None, angle=None, flatten=True):
+        """
+        Construct a `ZygoMap` object and pre-process with interpolation, cropping, and tilt-removal.
+        
+        Facilitates construction from three distinct sources:
+            - Read-in data from a locally-stored `MetroPro` ASCII .txt file via the 'filename' parameter.
+              Designed for specific formatting as detailed in the `MetroPro` manual.
+              (See: MetroPro Reference Guide, Section 12, pgs 12-17.
+                    https://www.seas.upenn.edu/~nanosop/documents/MetroProReferenceGuide0347_M.pdf)
+            
+            - Directly from a single pre-existing array source, via the 'array' parameter.
+            
+            - Indirectly from an array representing the interface height between two maps when 
+              combined face-to-face to form a bond. This is performed via the `combinemaps`
+              function, which also supplies details of the maps in the bond, 'map1' and 'map2',
+              and the angle at which their bond profile was minimised.
+              
+        A number of pre-processing steps are performed during initialisation:
+            - Surface measurements are stored in an array called 'heights'.
+            - Original data is kept as a copy, in an array called 'heights0'.
+            - Interpolation is performed to fill in any missing values,
+              and stored in an array called 'heights1'.
+            - Any tilt present in the data is removed to show the true variation of the heights.
+            - The data is cropped and centred so that the array extends to frame only the valid area.
+            - Key attributes are stored, including the 2 key surface height metrics,
+              peak-to-valley height and root-mean-square height.
+              
+        Parameters:
+        
+        'filename' : str, optional
+            - The local filepath of a `MetroPro` .txt data file of surface measurements.
+            - If this is not supplied, then 'array' must be given to construct the object.
+        'array' : numpy array, shape == (M,N), optional
+            - Pre-existing array of height values on a 2D grid, to be processed
+              and stored in 'heights'.
+            - If 'array' is not None, then this will be used to construct the object,
+              and 'filename' will be ignored whether it is given or not.
+              
+        'mapname' : str, optional
+            - Name to be given as an identifier for the map object.
+            - If 'filename' given, set by default to take the stem of the file (without .txt extension).
+            - Otherwise, if 'map1' and 'map2' exist, set by default to join the individual
+              map names with a "+" between them.
+            - Otherwise, 'mapname' will be None. The user can supply their own names.
+        'map1' : `ZygoMap` object, optional
+            - Map object for a constituent map that has been used to construct the current one.
+            - This is the "lower" map in the bond.
+        'map2' : `ZygoMap` object, optional
+            - Map object for a constituent map that has been used to construct the current one.
+            - This is the "upper" map in the bond.
+        'angle' : float, optional
+            - The relative in-plane rotation angle which was applied to 'map2'
+              to minimise the simulated bond profile.
+        'flatten' : bool, optional
+            - Flag to toggle the automatic tilt-removal process. Default is True.
+            - If user is providing a pre-defined array, they may want to keep the data as-is,
+              then flattening/tilt-removal can be turned off with `flatten=False`.
+        
+        Returns: None
+        
+        """
+        
         #initialise ZygoMap object, process to remove tilts and store information about surface and/or from file header
         #2 ways to make ZygoMap object:
         # - 1) reading in header and data arrays from ASCII .txt file (MetroPro formatting - see reference guide)
@@ -222,9 +384,12 @@ class ZygoMap:
         
         return
     
+    
     #use __str__ method to provide user summary on calling print(ZygoMap)
     #three possible paths, depending if single file object; interface created of two maps; or simply a user-defined array
     def __str__(self):
+        """Printed representation of the current object depending on creation/attributes."""
+        
         if self.filename is not None:
             if self.is_cropped:
                 return ("ZygoMap object '{0}' for file: '{1}'."
@@ -273,11 +438,38 @@ class ZygoMap:
                         "\nPeak-to-valley height: {0:.1f} nm"
                         "\nRMS height: {1:.1f} nm").format(self.peakvalley*1e9,self.rms*1e9)
         
+        
 #     @staticmethod
     def zygoread(self, filename):
+        """
+        For a given `MetroPro` text file, parse and separate the header fields from the measurement data.
+        
+        Works with the specific formatting of `MetroPro` ASCII data files.
+        See: MetroPro Reference Guide, Section 12, pgs 12-17
+             https://www.seas.upenn.edu/~nanosop/documents/MetroProReferenceGuide0347_M.pdf
+             
+        Parameters:
+        
+        'filename' : str
+            - path to a locally-stored `MetroPro` file in ASCII text format.
+            
+        Returns:
+        
+        'fields' : list
+            - Extracted values for header data.
+            - Stored as a list of lists, with varying data types in each field.
+            - Some elements of 'fields' need to be further split into the individual fields
+              as detailed in the `MetroPro` manual.
+        'data' : list
+            - Extracted values for intensity data, followed by phase data.
+            - Stored as a list of lists: 'data[0]' contains the intensity values as strings;
+              'data[1]' contains the phase values as strings.
+        
+        """
+        
         #works with specific ASCII format .txt files (documented in MetroPro reference guide)
         with open(filename, "r") as f:
-            fstrings = f.read().split("\"")  # - split by qoutation marks (easier to seperate string fields from data)
+            fstrings = f.read().split("\"")  # - split by quotation marks (easier to seperate string fields from data)
 
             fields = []
             data = []
@@ -311,7 +503,39 @@ class ZygoMap:
                         
         return fields, data
     
+    
     def interpolate_grid(self, array=None, x_step=1, y_step=1):
+        """
+        Perform interpolation for missing data in a 2D array, and fit all values onto a specified grid.
+        
+        Using the `scipy.interpolate.griddata` function, the original positions and values
+        in the array are used to estimate any missing data. A new grid is also supplied
+        for the positions to re-fit the interpolated data to.
+        
+        This can be run using default parameters as initial filling of missing points by
+        fitting to the same grid. Alternatively, the grid step can be increased/decreased
+        to give a denser/sparser array.
+        
+        Parameters:
+        
+        'array' : numpy array, shape == (M,N), optional
+            - the array containing values to be interpolated.
+            - By default, this will be the object's main 'heights' array.
+        'x_step' : float, optional
+            - step size in the x-axis for the new grid.
+            - Default is 1.0, which fits to the same x step size as the original data.
+        'y_step' : float, optional
+            - step size in the y-axis for the new grid.
+            - Default is 1.0, which fits to the same y step size as the original data.
+            
+        Returns:
+        
+        'interped' : numpy array, shape == (M / y_step, N / x_step)
+            - array of interpolated values on the new grid
+            - if 'x_step' and 'y_step' are both 1.0, this has the same shape as 'array'.
+        
+        """
+        
         #initial interpolation stage to cover any missing values
         #using scipy's griddata
         #the valid values are passed in, along with the new grid to fit to
@@ -337,7 +561,39 @@ class ZygoMap:
 
         return interped
     
+    
     def crop(self, radius=0, reflatten=True):
+        """
+        Crop the object's surface data to within a given radius, and centre array to frame the valid data.
+        
+        Allows cropping of the data by a user-defined amount - either through an exact radius (if 'radius' > 0),
+        or a relative trim from edge (if 'radius' < 0). A boolean mask array is created by testing if points in
+        the array are inside or outside of the crop radius. Points outside are set to `NaN`, indicating invalid
+        data.
+        
+        The array is sliced to remove any invalid points beyond the furthest rows/columns which have valid points.
+        This centres on the data which is valid, reducing the overall array size also.
+        
+        NOTE: 'crop' will modify the current object, however data can be restored when `radius=0`.
+        
+        Parameters:
+        
+        'radius' : float, optional
+            - The selected radius to crop array to. Can be positive, negative, or zero. Default is zero.
+            - If 'radius' > 0, this indicates an exact crop radius.
+              The cropped array will have axes of max. length 2 * radius (plus/minus 1).
+            - If 'radius' < 0, this indicates a relative trim inwards from the edges of the data.
+              The length of cropped array axes will depend on the input array dimensions.
+            - If 'radius' == 0, then no cropping is applied - the full data will be kept or restored.
+              `crop(radius=0)` is run during initialisation, only for centring and framing the valid data.
+              
+        Returns:
+        
+        'self' : `ZygoMap` object
+            - The modified version of the current object.
+        
+        """        
+        
         #allow user to crop to extract only data within some radius
         #most needed to avoid large edge effects (discontinuities)
         #use the (stored) centred x and y positions to check against radius
@@ -390,7 +646,32 @@ class ZygoMap:
         
         return self
     
+    
     def untilt(self, array=None):
+        """
+        Find the best-fit plane to surface height data, and subtract this to remove any slope/tilt in the data.
+        
+        Surface measurements often show tilts in the data which dominates the scaling so the variation can't be
+        seen clearly. By finding a least-squares planar fit, then subtracting the plane's offset at each point,
+        the variation of heights can be seen without interference from tilts.
+        
+        For the given array of heights, the `scipy.linalg.lstsq` function gets the least-squares minimised plane
+        which represents the tilt in the data. The values of the tilt plane at each grid point are subtracted,
+        and the array updated with the new values with tilt removed. Object attributes are updated for the new data.
+        
+        Parameters:
+        
+        'array' : numpy array, shape == (M,N), optional
+            - array containing the surface measurements.
+            - By default, uses the main array of the data, which is stored in the 'heights' attribute.
+            
+        Returns:
+        
+        'self' : `ZygoMap` object
+            - The modified version of the current object.
+        
+        """
+        
         #"array" argument left so normal or cropped maps can be used (i.e. self.heights vs self.cropped)
         #detect array=None to mean default self.heights
         if array is None:
@@ -433,7 +714,24 @@ class ZygoMap:
         
         return self
     
+    
     def plot(self, plot_type="2d"):
+        """
+        Create either a 2D or 3D plot representing the surface height values of the `ZygoMap`.
+        
+        Surface measurements are accessed via the 'heights' array attribute. This array is passed
+        into `matplotlib` functions to generate an output figure. Plots will contain a brief title
+        displaying basic information of the plotted object. 3D plots also mark the 'peak' and 'valley'
+        positions.
+        
+        Parameters:
+        
+        'plot_type' : str, optional
+            - String argument to select a plot type, either `plot_type="2d"` or `plot_type="3d"`. Default is "2d".
+            
+        Returns: None
+        
+        """
 
         current_cmap = cm.get_cmap("viridis")
         array = self.heights * 1e9
