@@ -733,7 +733,7 @@ class ZygoMap:
         
         """
 
-        current_cmap = cm.get_cmap("viridis")
+        current_cmap = plt.get_cmap("viridis")
         array = self.heights * 1e9
 
         if plot_type == "2d":
@@ -788,7 +788,7 @@ class ZygoMap:
             peakxy,valleyxy = np.where(array == peak), np.where(array == valley)
             ax.set_zlim(valley,peak)
 
-            current_cmap = cm.get_cmap("viridis")
+            current_cmap = plt.get_cmap("viridis")
 
             p = ax.plot_surface(x,y, array, vmin=valley, vmax=peak, cmap=current_cmap, ccount=10000, rcount=10000)
             ax.plot3D(*valleyxy, valley, "bx", zorder=10, ms=10)
