@@ -10,8 +10,8 @@ This emulates the profile of a bond between the surfaces.
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.optimize
-import scipy.ndimage
-from itertools import combinations
+import scipy.ndimage  # - performing rotation of array as image - i.e. around z-axis
+from itertools import combinations  # - get all N-length combinations from a list
 import pandas as pd
 
 from mapobject import ZygoMap
@@ -19,6 +19,48 @@ from utilities import matchdims, ztestf
 
 
 def combinemaps(lowermap, uppermap, newname=None, optimised=True, output=True):
+    """
+    Construct a `ZygoMap` object for the simulated bond between two surface maps.
+    
+    For a pair of `ZygoMap` objects, the bond between them can be simulated by "flipping" one map upside down
+    so that the measured surfaces are facing each other. `combinemaps` does this by reversing 'uppermap' across
+    one axis, then negating its height values so that the array now represents the "downward" map with respect to
+    the lower map. The array values are summed directly, and the maximum overlap is added back as an offset.
+    This prevents a non-physical representation where surfaces would be intersecting at negative values.
+    
+    An array 'interface' is obtained where the values give the height of the gap between the surfaces just as
+    they make contact. A `ZygoMap` is created using the interface heights.
+    
+    If 'optimised == True', then the function will optimise the bond's peak-to-valley height based on the relative
+    in-plane rotation of 'uppermap' with respect to 'lowermap'.
+    
+    NOTE: To directly sum the arrays, they must share the same dimensions.
+          Maps are trimmed automatically using `matchdims` function.
+          
+    
+    Parameters:
+    
+    'lowermap' : `ZygoMap` object
+        - This map represents the "lower" map of the bond.
+    'uppermap' : `ZygoMap` object
+        - This map represents the "upper" map of the bond.
+        - Rotations are applied only to this map.
+    'newname' : str, optional
+        - Optional string to specify the `mapname` parameter for the returned `ZygoMap`. Default is None.
+        - If None, `mapname` will be set automatically when created.
+    'optimised' : bool, optional
+        - Flag to toggle z-rotation optimisation. Default is True.
+    'output' : bool, optional
+        - Flag to toggle printed output message upon successful creation. Default is True.
+        - Provides basic feedback on the creation, including the optimised angle and new height metrics.
+        
+    Returns:
+    
+    'interfacemap' : `ZygoMap` object
+        - Map for the height profile of the simulated bond interface.
+    
+    """
+    
     m1,m2 = lowermap.heights, uppermap.heights
     #function to combine ZygoMap objects
     #flips and negates values of the 2nd map "uppermap"
@@ -75,7 +117,7 @@ def combinemaps(lowermap, uppermap, newname=None, optimised=True, output=True):
     if optimised and output:
         if getattr(lowermap, "mapname") and getattr(uppermap, "mapname"):  # - if each defined from files, can use their filenames as references
             print(("Combined interface map: '{0}'"
-                   "\nMaps combined for optimal angle of {1:.2f} degrees."
+                   "\nMaps combined for optimal angle of {1:.2f} degrees"
                    "\n'{2}' clockwise w.r.t '{3}'").format(interfacemap.mapname, optimalangle,uppermap.mapname,lowermap.mapname))
         else:
             print(("Maps combined for optimal angle of {0:.2f} degrees"
@@ -87,7 +129,51 @@ def combinemaps(lowermap, uppermap, newname=None, optimised=True, output=True):
     return interfacemap
 
 
-def comparebonds(zmaps, plot=False):
+def comparebonds(zmaps, plot=False, threshold=60e-9):
+    """
+    Compare interface/bond maps for all possible pairs of `ZygoMap` objects in a given list/tuple/dictionary.
+    
+    Each pair of maps is combined using `combinemaps` to produce the optimised `ZygoMap` for their bond
+    interface. The interface maps are then compared and sorted in terms of lowest peak-to-valley height.
+    All interface maps are returned in a `pandas` DataFrame, containing the map objects and associated
+    attributes: the interface map's name, the constituent maps 'map1' and 'map2', and the key metrics
+    peak-to-valley height and RMS height. This dataframe is sorted by lowest peak-to-valley by default.
+    
+    An additional plotting option is provided using `plot=True`. This will give a visual comparison for
+    all maps' key metric values, sorted by each of PV and RMS separately.
+    
+    NOTE: Plots are made by default with a line at 60 nanometres, indicating the threshold peak-to-valley 
+          height targeted in the specific case of Gravitational Wave detector bonds. This can be set to a
+          custom value by supplying the `threshold` argument.
+          
+          
+    Parameters:
+    
+    'zmaps' : list, tuple, or dict
+        - Iterable containing `ZygoMap` objects to be combined and compared.
+    'plot' : bool, optional
+        - Turn on output plots showing the peak-to-valley and RMS values of the simulated bonds. Default is False.
+        - This will display two plots: one sorted by PV value and the other sorted by RMS value.
+    'threshold' : float, optional
+        - Maximum target for the peak-to-valley value of a bond. Adds a horizontal line to plots if `plot=True` is set.
+        - This will highlight on the plot this upper threshold so bond performance can be easily identified.
+        - Default is 60e-9 (60 nanometres).
+        
+    Returns:
+    
+    'sorted_bonds' : `pandas` DataFrame
+        - Data frame containing the created interface/bond maps,
+          along with associated attributes of the new `ZygoMap` object.
+        - Columns:
+            'Bond Map' : `ZygoMap` object for the bond.
+            'mapname' : name of the created bond map.
+            'map1' : name of the "lower" map used in the bond.
+            'map2' : name of the "upper" map used in the bond.
+            'PV' : peak-to-valley height measurement of the bond map.
+            'RMS' : RMS height measurement of the bond map.
+    
+    """    
+    
     if isinstance(zmaps, dict):
         mpairs = np.array(list(combinations(zmaps.values(), 2)))
     elif isinstance(zmaps, list) or isinstance(zmaps, tuple):
@@ -111,6 +197,7 @@ def comparebonds(zmaps, plot=False):
     #names of combined maps ["map1"],["map2"],
     #peakvalley ["PV"] and rms ["RMS"] heights.
     sorted_bonds = pd.DataFrame({"Bond Map": interfacemaps,
+                                 "mapname": [bond.mapname for bond in interfacemaps],
                                  "map1": [bond.map1.mapname for bond in interfacemaps], 
                                  "map2": [bond.map2.mapname for bond in interfacemaps], 
                                  "PV": [bond.peakvalley for bond in interfacemaps], 
@@ -132,7 +219,7 @@ def comparebonds(zmaps, plot=False):
         plt.yticks(np.arange(0, sorted_bonds["PV"].max() + 10e-9, 10e-9))
         plt.ticklabel_format(axis="y", style="sci", scilimits=(-9,-9), useMathText=True)
         plt.tick_params(axis="x", labelsize=6)
-        plt.axhline(60e-9, linestyle="solid", linewidth=3, color="r")
+        plt.axhline(threshold, linestyle="solid", linewidth=3, color="r")
         plt.legend(loc="upper left", fontsize=14)
         plt.grid()
         plt.show()
@@ -150,7 +237,7 @@ def comparebonds(zmaps, plot=False):
         plt.yticks(np.arange(0, sorted_bonds["PV"].max() + 10e-9, 10e-9))
         plt.ticklabel_format(axis="y", style="sci", scilimits=(-9,-9), useMathText=True)
         plt.tick_params(axis="x", labelsize=6)
-        plt.axhline(60e-9, linestyle="solid", linewidth=3, color="r")
+        plt.axhline(threshold, linestyle="solid", linewidth=3, color="r")
         plt.legend(loc="upper left", fontsize=14)
         plt.grid()
         plt.show()
