@@ -7,14 +7,14 @@ Using the `ZygoMap` class, users can store and represent surface measurement dat
 `ZygoMap` objects are specifically designed to read-in data from `MetroPro` ASCII data files. They can also work with user-provided arrays, giving specific control to users over their analysis.
 
 <p align="center">
-  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_A1.png" width="280">
-  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_A2.png" width="280">
-  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_C1.png" width="286">
+  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_A1.png" width="260">
+  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_A2.png" width="260">
+  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_C1.png" width="266">
 </p>
 <p align="center">
-  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_C2.png" width="280">
-  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_M1.png" width="280">
-  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_M2.png" width="280">
+  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_C2.png" width="260">
+  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_M1.png" width="260">
+  <img src="https://github.com/scottgallacher-3/P4Project/blob/main/examples/new_M2.png" width="260">
 </p>
 
 ## Bond Interface Maps:
