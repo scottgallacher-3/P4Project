@@ -18,7 +18,7 @@ Using the `ZygoMap` class, users can store and represent surface measurement dat
 </p>
 
 ## Bond Interface Maps:
-Create simulated bonds between two surfaces, and study maps of their bond interface. `ZygoMap` objects can be combined to simulate the face-to-face bond of a pair of maps.
+Create simulated bonds between two surfaces, and study maps of their bond interface. `ZygoMap` objects can be combined to simulate the face-to-face bond of the two samples.
 
 A pair of maps can be passed to `combinemaps`, which will automatically simulate and optimise their bond, returning a new `ZygoMap` representing the height gaps of the bond interface.
 
